@@ -1476,22 +1476,6 @@ void ohb_loadrom(char *rom){
 	scaler_init(0);
 }
 
-#ifdef DINGOO_BUILD
-/*
-** basically a dirname() implementation
-*/
-char     exe_path[256];
-char* exe_path_init(const char* inPath) {
-	uintptr_t i, j;
-	for(i = 0, j = 0; inPath[i] != '\0'; i++) {
-		if((inPath[i] == '\\') || (inPath[i] == '/'))
-			j = i + 1;
-	}
-	strncpy(exe_path, inPath, j);
-	exe_path[j] = '\0';
-	return exe_path;
-}
-#endif /* DINGOO_BUILD */
 
 int main(int argc, char *argv[]){
 	FILE *config;
@@ -1502,15 +1486,12 @@ int main(int argc, char *argv[]){
 	char *tmp_buf=NULL;
 
 	SDL_Init(SDL_INIT_VIDEO|SDL_INIT_JOYSTICK);
-#ifdef WIZ
-	screen = WIZ_SetVideoMode(320, 240, 16, SDL_SWSURFACE);
-#else
+
 #ifdef DINGOO_OPENDINGUX
 	screen = SDL_SetVideoMode(320, 240, 16, SDL_HWSURFACE | SDL_DOUBLEBUF);
 #else
 	screen = SDL_SetVideoMode(320, 240, 16, SDL_SWSURFACE);
 #endif /* DINGOO_OPENDINGUX */
-#endif /* WIZ */
 	SDL_ShowCursor(0);
 
 	sdl_joy = SDL_JoystickOpen(0);

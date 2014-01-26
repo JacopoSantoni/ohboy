@@ -18,6 +18,7 @@ OBJS = $(GNUBOY)/lcd.o $(GNUBOY)/refresh.o $(GNUBOY)/lcdc.o $(GNUBOY)/palette.o 
 	gui_sdl.o keymap.o \
 	main.o menu.o \
 	./ubytegui/dialog.o ./ubytegui/font.o ./ubytegui/gui.o ./ubytegui/pixmap.o \
+	gcwinterface.o
 
 ## NOTE inc paths are from TinyCore SDL-dev
 DEFS = -DIS_LITTLE_ENDIAN -DALT_PATH_SEP
@@ -25,7 +26,7 @@ INCS = -I$(GNUBOY) -I$(GNUBOY)/sys/sdl -I/usr/include/ `sdl-config --cflags`
 LIBS =  `sdl-config --libs`
 LDFLAGS += -dynamiclib
 
-#CFLAGS += -arch i386
+#CFLAGS += -arch x86_64
 
 # Use SDL_image - for use with SFont (rather than FREETYPE_TTF)
 # NOTE can still use SFont without SDL_image
@@ -72,6 +73,7 @@ endif
 DEFS += -DGNUBOY_NO_SCREENSHOT
 
 MYCC = $(CC) $(CFLAGS) $(INCS) $(DEFS)
+MYGG = clang++ -std=c++0x -stdlib=libc++
 
 all: ohboy_ver.h ohboy.dylib
 
@@ -82,7 +84,7 @@ ohboy_ver.h:
 	sh gen_ohboyver.sh > ohboy_ver.h
 
 ohboy.dylib: $(OBJS)
-	$(LD) $(LDFLAGS) $(OBJS) -o $@ $(LIBS)
+	clang++ $(LDFLAGS) $(OBJS) -o $@ $(LIBS)
 
 clean:
 	rm -f ohboy ohboy.exe *.o ubytegui/*.o $(GNUBOY)/*.o
@@ -93,3 +95,6 @@ $(GNUBOY)/main.o:
 
 .c.o:
 	$(MYCC) -c $< -o $@
+	
+.cpp.o:
+	$(MYGG) -c $< -o $@
