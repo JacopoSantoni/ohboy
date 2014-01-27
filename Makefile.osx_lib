@@ -24,7 +24,7 @@ OBJS = $(GNUBOY)/lcd.o $(GNUBOY)/refresh.o $(GNUBOY)/lcdc.o $(GNUBOY)/palette.o 
 DEFS = -DIS_LITTLE_ENDIAN -DALT_PATH_SEP
 INCS = -I$(GNUBOY) -I$(GNUBOY)/sys/sdl -I/usr/include/ `sdl-config --cflags`
 LIBS =  `sdl-config --libs`
-LDFLAGS += -dynamiclib
+LDFLAGS += -dynamiclib -std=c++0x -stdlib=libc++
 
 #CFLAGS += -arch x86_64
 
