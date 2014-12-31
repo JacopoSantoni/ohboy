@@ -52,9 +52,9 @@ enum
 #endif
 
 #ifdef GP2X
-	if(GP2X_PollEvent(&event)) {
+	while (GP2X_PollEvent(&event)) {
 #else
-	if(SDL_PollEvent(&event)) {
+	while (SDL_PollEvent(&event)) {
 #endif
 
 #ifdef DINGOO_BUILD
@@ -80,7 +80,7 @@ enum
 					ev->key = GUI_RIGHT;
 					break;
 				default:
-					return 0;
+					continue;
 			}
 			return 1;
 		}
@@ -108,7 +108,7 @@ enum
 					ev->key = GUI_RIGHT;
 					break;
 				default:
-					return 0;
+					continue;
 			}
 			return 1;
 		}
@@ -136,12 +136,12 @@ enum
 					ev->key = GUI_RIGHT;
 					break;
 				default:
-					return 0;
+					continue;
 			}
 			return 1;
 		}
 #endif
-#ifndef DINGOO_BUILD || GP2X_ONLY || CAANOO
+#if !defined(DINGOO_BUILD) || !defined(GP2X_ONLY) || !defined(CAANOO)
 		if(event.type == SDL_KEYDOWN || event.type == SDL_KEYUP){
 			ev->state = event.key.state == SDL_PRESSED ? GUI_PRESSED : GUI_RELEASED;
 			switch(event.key.keysym.sym){
@@ -166,7 +166,7 @@ enum
 				default:
 					if (event.type == SDL_KEYUP && event.key.keysym.sym == SCREENSHOT_SDL_KEY)
 						TakeScreenShot((SDL_Surface *) NULL, (char *) NULL);
-					return 0;
+					continue;
 			}
 			return 1;
 		}

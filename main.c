@@ -73,7 +73,7 @@ SDL_Rect myrect;
 static font_t *font;
 
 struct fb fb;
-static int upscaler=0, frameskip=0, sdl_showfps=0, cpu_speed=0, bmpenabled=0, statesram=1;
+static int upscaler=0, frameskip=0, sdl_showfps=0, cpu_speed=0, bmpenabled=0, statesram=1, analog_input=1, systemmode=0;
 static char* romdir=0, pal=0;
 char *border;
 char *gbcborder;
@@ -87,28 +87,38 @@ static int button_a=2, button_b=1, button_x=0, button_y=0, button_l=0, button_r=
 #ifdef GNUBOY_HARDWARE_VOLUME
 static int  sndlvl=10;
 #endif /* GNBOY_HARDWARE_VOLUME */
+#ifdef GCWZERO
+static int alt_menu_combo=0;
+#endif /* GCWZERO */
 
 rcvar_t vid_exports[] =
 {
-#ifdef GNUBOY_HARDWARE_VOLUME
-	RCV_INT("sndlvl", &sndlvl),
-#endif /* GNBOY_HARDWARE_VOLUME */
-	RCV_INT("upscaler", &upscaler),
 	RCV_INT("frameskip", &frameskip),
 	RCV_INT("showfps", &sdl_showfps),
 	RCV_INT("cpuspeed",&cpu_speed),
+	RCV_STRING("romdir",&romdir),
+	RCV_INT("statesram", &statesram),
+	RCV_INT("systemmode", &systemmode),
+#ifdef GNUBOY_HARDWARE_VOLUME
+	RCV_INT("sndlvl", &sndlvl),
+#endif /* GNBOY_HARDWARE_VOLUME */
+	
+	RCV_STRING("palette",&pal),
+	RCV_INT("upscaler", &upscaler),
 	RCV_INT("bmpenabled", &bmpenabled),
 	RCV_STRING("border",&border),
 	RCV_STRING("gbcborder",&gbcborder),
-	RCV_STRING("romdir",&romdir),
-	RCV_STRING("palette",&pal),
+	
 	RCV_INT("button_a", &button_a),
 	RCV_INT("button_b", &button_b),
 	RCV_INT("button_x", &button_x),
 	RCV_INT("button_y", &button_y),
 	RCV_INT("button_l", &button_l),
-	RCV_INT("button_r", &button_r),
-	RCV_INT("statesram", &statesram),
+	RCV_INT("button_r", &button_r),	
+	RCV_INT("analog_input", &analog_input),
+#ifdef GCWZERO
+	RCV_INT("alt_menu_combo", &alt_menu_combo),
+#endif /* GCWZERO */	
 	RCV_END
 };
 
@@ -127,9 +137,16 @@ rcvar_t pcm_exports[] =
 #endif /* OHBOY_DISABLE_SDL_SOUND */
 #endif /* GNUBOY_DISABLE_SDL_SOUND */
 
-#define PCM_BUFFER 4096
-#define PCM_FRAME 512
 #define PCM_SAMPLERATE 44100
+#ifdef GCWZERO
+#define PCM_BUFFER 2048
+#define PCM_FRAME 1024
+#define VOL_MULTIPLIER 3
+#else
+#define PCM_BUFFER 3072
+#define PCM_FRAME 1024
+#define VOL_MULTIPLIER 1
+#endif /* GCWZERO */
 
 #define UP_MASK 	0x83
 #define DOWN_MASK 	0x38
@@ -285,7 +302,6 @@ void vid_init() {
 	SDL_FreeSurface (bordersf);
 	vid_fb.first_paint = 1;	
 
-	
 	if (bmpenabled == 0){
 		bordersf = SDL_LoadBMP("etc"DIRSEP"black.bmp");}
 	else if (bmpenabled == 1)
@@ -297,12 +313,84 @@ void vid_init() {
 		if (hw.cgb){bordersf = SDL_LoadBMP(gbcborder);}
 		if (!hw.cgb){bordersf = SDL_LoadBMP(border);}
 #endif /*OHBOY_USE_SDL_IMAGE*/
+		if ((upscaler == 3) || (upscaler == 4) || (upscaler == 7)) {bordersf = SDL_LoadBMP("etc"DIRSEP"black.bmp");}
 		#if defined(DINGOO_OPENDINGUX)
 		if (bordersf == NULL){                 /*Fix for flickering screen when borders are set to On but no border is loaded, and double buffer is used*/
 			bordersf = SDL_LoadBMP("etc"DIRSEP"black.bmp");
 		}
 		#endif /*DINGOO_OPENDINGUX*/
 	}
+}
+
+void paint_menu_bg() {
+
+	int x, y;
+	pixmap_t *pix;
+
+	#ifdef UBYTE_USE_LIBPNG
+	#ifdef DINGOO_SIM
+		/* do nothing */
+	#else
+		pix = pixmap_loadpng("etc"DIRSEP"launch.png");
+
+		if(pix){
+			SDL_LockSurface(screen);
+			x = (screen->w - pix->width)/2;
+			y = (screen->h - pix->height)/2;
+			osd_drawpixmap(pix,x,y,0);
+			pixmap_free(pix);
+			SDL_UnlockSurface(screen);
+		}
+	#endif /* DINGOO_SIM */
+	#else
+		/*
+		** Use SDL_LoadBMP() from base SDL 
+		** TODO use IMG_Load() from SDL_image
+		*/
+		
+		SDL_Surface *tmp_surface=NULL;
+	#ifdef DINGOO_SIM
+		/* do nothing */
+	#else
+		tmp_surface = SDL_LoadBMP("etc"DIRSEP"launch.bmp");
+
+		if (tmp_surface)
+		{
+			bgimage_bitmap_surface = SDL_DisplayFormat(tmp_surface);
+			SDL_FreeSurface(tmp_surface);
+			if (bgimage_bitmap_surface)
+			{
+				/*
+				SDL_Rect src, dest;
+				
+				src.x = 0;
+				src.y = 0;
+				src.w = bgimage_bitmap_surface->w;
+				src.h = bgimage_bitmap_surface->h;
+				 
+				dest.x = 0;
+				dest.y = 0;
+				dest.w = bgimage_bitmap_surface->w;
+				dest.h = bgimage_bitmap_surface->h;
+				*/
+				
+				SDL_UnlockSurface(screen);
+				SDL_BlitSurface(bgimage_bitmap_surface, NULL, screen, NULL);
+				/*
+				SDL_BlitSurface(bgimage_bitmap_surface, &src, screen, &dest);
+				*/
+				SDL_Flip(screen);                                              /*Fix for launch BMP not showing when using double buffer*/
+				SDL_BlitSurface(bgimage_bitmap_surface, NULL, screen, NULL);   /*Paints the launch BMP two times*/
+				
+				SDL_FreeSurface(bgimage_bitmap_surface);
+				SDL_Flip(screen);
+				/*
+				SDL_LockSurface(screen);  // for some reason this prevents SFont from displaying.....
+				*/
+			}
+		}
+	#endif /* DINGOO_SIM */
+	#endif /* UBYTE_USE_LIBPNG */
 }
 
 void vid_setpal(int i, int r, int g, int b){
@@ -706,6 +794,143 @@ void ayla_scale15x(uint32_t *to, uint32_t *from)
         }
 }
 
+/*
+ * Approximately bilinear scaler, 160x144 to 280x240
+ *
+ * Copyright (C) 2014 hi-ban, Nebuleon <nebuleon.fumika@gmail.com>
+ *
+ * This function and all auxiliary functions are free software; you can
+ * redistribute them and/or modify them under the terms of the GNU Lesser
+ * General Public License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
+ *
+ * These functions are distributed in the hope that they will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+ */
+
+// Support math
+#define Half(A) (((A) >> 1) & 0x7BEF)
+
+// Error correction expressions to piece back the lower bits together
+#define RestHalf(A) ((A) & 0x0821)
+
+// Error correction expressions for halves
+#define Corr1_1(A, B)     ((A) & (B) & 0x0821)
+
+// Halves
+#define Weight1_1(A, B)   (Half(A) + Half(B) + Corr1_1(A, B))
+
+/* Upscales a 160x144 image to 280x240 using an approximate bilinear
+ * resampling algorithm that only uses integer math.
+ *
+ * Input:
+ *   src: A packed 160x144 pixel image. The pixel format of this image is
+ *     RGB 565.
+ * Output:
+ *   dst: A packed 280x240 pixel image. The pixel format of this image is
+ *     RGB 565.
+ */
+
+void upscale_160x144_to_280x240_bilinearish(uint32_t* dst, uint32_t* src)
+{
+	uint16_t* Src16 = (uint16_t*) src;
+	uint16_t* Dst16 = (uint16_t*) dst;
+	// There are 40 blocks of 4 pixels horizontally, and 48 of 3 vertically.
+	// Each block of 4x3 becomes 7x5.
+	uint32_t BlockX, BlockY;
+	uint16_t* BlockSrc;
+	uint16_t* BlockDst;
+	for (BlockY = 0; BlockY < 48; BlockY++)
+	{
+		BlockSrc = Src16 + BlockY * 160 * 3;
+		BlockDst = Dst16 + BlockY * 320 * 5;
+		for (BlockX = 0; BlockX < 40; BlockX++)
+		{
+			/* Horizontally:
+			 * Before(4):
+			 * (a)(b)(c)(d)
+			 * After(7):
+			 * (a)(ab)(b)(bc)(c)(cd)(d)
+			 *
+			 * Vertically:
+			 * Before(3): After(5):
+			 * (a)       (a)
+			 * (b)       (ab)
+			 * (c)       (b)
+			 *           (bc)
+			 *           (c)
+
+			 */
+
+			// -- Row 1 --
+			uint16_t  _1 = *(BlockSrc               );
+			*(BlockDst               ) = _1;
+			uint16_t  _2 = *(BlockSrc            + 1);
+			*(BlockDst            + 1) = Weight1_1(_1, _2);
+			*(BlockDst            + 2) = _2;
+			uint16_t  _3 = *(BlockSrc            + 2);
+			*(BlockDst            + 3) = Weight1_1(_2, _3);
+			*(BlockDst            + 4) = _3;
+			uint16_t  _4 = *(BlockSrc            + 3);
+			*(BlockDst            + 5) = Weight1_1(_3, _4);
+			*(BlockDst            + 6) = _4;
+
+			// -- Row 2 --
+			uint16_t _5 = *(BlockSrc + 160 *  1    );
+			*(BlockDst + 320 *  1    ) = Weight1_1(_1, _5);
+			uint16_t _6 = *(BlockSrc + 160 *  1 + 1);
+			*(BlockDst + 320 *  1 + 1) = Weight1_1(Weight1_1(_1, _2), Weight1_1(_5, _6));
+			*(BlockDst + 320 *  1 + 2) = Weight1_1(_2, _6);
+			uint16_t _7 = *(BlockSrc + 160 *  1 + 2);
+			*(BlockDst + 320 *  1 + 3) = Weight1_1(Weight1_1(_2, _3), Weight1_1(_6, _7));
+			*(BlockDst + 320 *  1 + 4) = Weight1_1(_3, _7);
+			uint16_t _8 = *(BlockSrc + 160 *  1 + 3);
+			*(BlockDst + 320 *  1 + 5) = Weight1_1(Weight1_1(_3, _4), Weight1_1(_7, _8));
+			*(BlockDst + 320 *  1 + 6) = Weight1_1(_4, _8);
+			
+			// -- Row 3 --
+			*(BlockDst + 320 *  2    ) = _5;
+			*(BlockDst + 320 *  2 + 1) = Weight1_1(_5, _6);
+			*(BlockDst + 320 *  2 + 2) = _6;
+			*(BlockDst + 320 *  2 + 3) = Weight1_1(_6, _7);
+			*(BlockDst + 320 *  2 + 4) = _7;
+			*(BlockDst + 320 *  2 + 5) = Weight1_1(_7, _8);
+			*(BlockDst + 320 *  2 + 6) = _8;
+
+			// -- Row 4 --
+			uint16_t _9 = *(BlockSrc + 160 *  2    );
+			*(BlockDst + 320 *  3    ) = Weight1_1(_5, _9);
+			uint16_t _10 = *(BlockSrc + 160 *  2 + 1);
+			*(BlockDst + 320 *  3 + 1) = Weight1_1(Weight1_1(_5, _6), Weight1_1(_9, _10));
+			*(BlockDst + 320 *  3 + 2) = Weight1_1(_6, _10);
+			uint16_t _11 = *(BlockSrc + 160 *  2 + 2);
+			*(BlockDst + 320 *  3 + 3) = Weight1_1(Weight1_1(_6, _7), Weight1_1(_10, _11));
+			*(BlockDst + 320 *  3 + 4) = Weight1_1(_7, _11);
+			uint16_t _12 = *(BlockSrc + 160 *  2 + 3);
+			*(BlockDst + 320 *  3 + 5) = Weight1_1(Weight1_1(_7, _8), Weight1_1(_11, _12));
+			*(BlockDst + 320 *  3 + 6) = Weight1_1(_8, _12);
+
+			// -- Row 5 --
+			*(BlockDst + 320 *  4    ) = _9;
+			*(BlockDst + 320 *  4 + 1) = Weight1_1(_9, _10);
+			*(BlockDst + 320 *  4 + 2) = _10;
+			*(BlockDst + 320 *  4 + 3) = Weight1_1(_10, _11);
+			*(BlockDst + 320 *  4 + 4) = _11;
+			*(BlockDst + 320 *  4 + 5) = Weight1_1(_11, _12);
+			*(BlockDst + 320 *  4 + 6) = _12;
+
+			BlockSrc += 4;
+			BlockDst += 7;
+		}
+	}
+}
+
 /****************************************************************/
 
 /*
@@ -735,6 +960,48 @@ void ohb_no_scale(){
 	}
 }
 
+void ohb_hardware_15x_scale(){
+    /* Hardware scaling */
+
+	un16 *src = (un16 *) fb.ptr;
+	un16 *dst = (un16*) vid_fb.ptr + 1688;
+	int x=0, y=0;
+
+	for(y=0; y<144; y++){
+		memcpy(dst, src, 2*160);
+		src += 160;
+		dst += 208;
+	}
+}
+
+void ohb_hardware_1666x_scale(){
+    /* Hardware scaling */
+
+	un16 *src = (un16 *) fb.ptr;
+	un16 *dst = (un16*) vid_fb.ptr + 16;
+	int x=0, y=0;
+
+	for(y=0; y<144; y++){
+		memcpy(dst, src, 2*160);
+		src += 160;
+		dst += 192;
+	}
+}
+
+void ohb_hardware_fullscreen_scale(){
+    /* Hardware scaling */
+
+	un16 *src = (un16 *) fb.ptr;
+	un16 *dst = (un16*) vid_fb.ptr + 0;
+	int x=0, y=0;
+
+	for(y=0; y<144; y++){
+		memcpy(dst, src, 2*160);
+		src += 160;
+		dst += 160;
+	}
+}
+
 /*
 ** Assumes 16bpp. RGB565
 ** Assumes src pixels are in the same format as the dest pixels.
@@ -760,6 +1027,16 @@ void ohb_ayla_scale15x(){
 	ayla_scale15x((uint32_t *) dst, (uint32_t *) src);
 }
 
+void ohb_scale_aspect(){
+    /* bilinearish scaler */
+
+	un16 *src = (un16 *) fb.ptr;
+	un16 *dst = (un16*)vid_fb.ptr + 20;
+	int x,y;
+
+	upscale_160x144_to_280x240_bilinearish((uint32_t *) dst, (uint32_t *) src);
+}
+
 void scaler_init(int scaler_number){
 	switch (upscaler){
 		case 2: /* 1.5 scaler with some smoothing ala scale3x / scale2x */
@@ -769,7 +1046,13 @@ void scaler_init(int scaler_number){
 			fb.cc[2].r = screen->format->Bloss+2;
 			break;
 		case 1: /* Ayla's 1.5x scaler */
-		case 3: /* Ayla full screen 320x240 (no aspect ration preservation) */
+		case 3: /* Bilinearish 1.666x scaler */
+		case 4: /* Ayla full screen 320x240 (no aspect ration preservation) */
+#ifdef GCWZERO
+		case 5: /* Hardware 1.5x scaler */
+		case 6: /* Hardware 1.666x scaler */
+		case 7: /* Hardware Fullscreen scaler */
+#endif
 		case 0: /* no scale, that is, native */
 		default:
 			/* RGB565 */
@@ -895,6 +1178,74 @@ void vid_begin(){
 			SDL_BlitSurface(bordersf, &border1, screen, NULL);   /*Paints the border image two times*/
 			#endif /*DINGOO_OPENDINGUX*/
 		}
+		if (upscaler == 3) {
+			SDL_Rect border1;
+			border1.x=0;
+			border1.y=0;
+			border1.w=320;
+			border1.h=240;
+			SDL_BlitSurface(bordersf, &border1, screen, NULL);
+			#if defined(DINGOO_OPENDINGUX)
+			SDL_Flip(screen);                                    /*Fix for flickering borders with double buffer*/
+			SDL_BlitSurface(bordersf, &border1, screen, NULL);   /*Paints the border image two times*/
+			#endif /*DINGOO_OPENDINGUX*/
+		}
+#ifdef GCWZERO
+		if (upscaler == 5) {
+			FILE* aspect_ratio_file = fopen("/sys/devices/platform/jz-lcd.0/keep_aspect_ratio", "w");
+			if (aspect_ratio_file)
+			{ 
+				fwrite("1", 1, 1, aspect_ratio_file);
+				fclose(aspect_ratio_file);
+			}
+			SDL_Rect border1;
+			border1.x=56;
+			border1.y=39;
+			border1.w=208;
+			border1.h=160;
+			SDL_BlitSurface(bordersf, &border1, screen, NULL);
+			#if defined(DINGOO_OPENDINGUX)
+			SDL_Flip(screen);                                    /*Fix for flickering borders with double buffer*/
+			SDL_BlitSurface(bordersf, &border1, screen, NULL);   /*Paints the border image two times*/
+			#endif /*DINGOO_OPENDINGUX*/
+		}
+		if (upscaler == 6) {
+			FILE* aspect_ratio_file = fopen("/sys/devices/platform/jz-lcd.0/keep_aspect_ratio", "w");
+			if (aspect_ratio_file)
+			{ 
+				fwrite("1", 1, 1, aspect_ratio_file);
+				fclose(aspect_ratio_file);
+			}
+			SDL_Rect border1;
+			border1.x=64;
+			border1.y=47;
+			border1.w=192;
+			border1.h=144;
+			SDL_BlitSurface(bordersf, &border1, screen, NULL);
+			#if defined(DINGOO_OPENDINGUX)
+			SDL_Flip(screen);                                    /*Fix for flickering borders with double buffer*/
+			SDL_BlitSurface(bordersf, &border1, screen, NULL);   /*Paints the border image two times*/
+			#endif /*DINGOO_OPENDINGUX*/
+		}
+		if (upscaler == 7) {
+			FILE* aspect_ratio_file = fopen("/sys/devices/platform/jz-lcd.0/keep_aspect_ratio", "w");
+			if (aspect_ratio_file)
+			{ 
+				fwrite("0", 1, 1, aspect_ratio_file);
+				fclose(aspect_ratio_file);
+			}
+			SDL_Rect border1;
+			border1.x=0;
+			border1.y=0;
+			border1.w=320;
+			border1.h=240;
+			SDL_BlitSurface(bordersf, &border1, screen, NULL);
+			#if defined(DINGOO_OPENDINGUX)
+			SDL_Flip(screen);                                    /*Fix for flickering borders with double buffer*/
+			SDL_BlitSurface(bordersf, &border1, screen, NULL);   /*Paints the border image two times*/
+			#endif /*DINGOO_OPENDINGUX*/
+		}
+#endif
 		vid_fb.first_paint = 0;
 		vid_fb.dirty = 0;
 	} 
@@ -944,6 +1295,29 @@ void osd_volume(){
 	osd_drawrect(2+x,screen->h-font->height-2,w,font->height,gui_maprgb(0xFF,0xFF,0xFF), rounded);
 }
 
+void VideoEnterGame() {
+#ifdef GCWZERO
+	if (upscaler < 5) {
+		screen = SDL_SetVideoMode(320, 240, 16, SDL_HWSURFACE | SDL_DOUBLEBUF);
+	}
+	if (upscaler == 5) {
+		screen = SDL_SetVideoMode(208, 160, 16, SDL_HWSURFACE | SDL_DOUBLEBUF);
+	}
+	if (upscaler == 6) {
+		screen = SDL_SetVideoMode(192, 144, 16, SDL_HWSURFACE | SDL_DOUBLEBUF);
+	}
+	if (upscaler == 7) {
+		screen = SDL_SetVideoMode(160, 144, 16, SDL_HWSURFACE | SDL_DOUBLEBUF);
+	}
+#endif
+}
+
+void VideoExitGame() {
+#ifdef GCWZERO
+	screen = SDL_SetVideoMode(320, 240, 16, SDL_HWSURFACE | SDL_DOUBLEBUF);
+#endif
+}
+
 void vid_end() {
 	if(fb.enabled){
 		vid_fb.ptr = screen->pixels;
@@ -962,8 +1336,22 @@ void vid_end() {
 				ohb_scale3x();
 				break;
 			case 3:
+				ohb_scale_aspect();
+				break;
+			case 4:
 				ohb_ayla_dingoo_scale();
 				break;
+#ifdef GCWZERO
+			case 5:
+				ohb_hardware_15x_scale();
+				break;
+			case 6:
+				ohb_hardware_1666x_scale();
+				break;
+			case 7:
+				ohb_hardware_fullscreen_scale();
+				break;
+#endif
 			case 0:
 			default:
 				ohb_no_scale();
@@ -991,7 +1379,7 @@ void vid_end() {
             fps_current_count++;
             if (sdl_showfps == 1)
             {
-                snprintf(fps_str, 19, "%d FPS", fps_last_count);
+                snprintf(fps_str, 19, "%02d", fps_last_count);
 				myrect.w = SFont_TextWidth(fps_font, fps_str);
                 SDL_FillRect(screen, &myrect, 0 );
             }
@@ -1077,7 +1465,7 @@ return 0; /* no sound */
 
 	while(pcm.pos){
 		sample = (*src++) - 128;
-		sample = sample * pcm_soft_volume;
+		sample = sample * pcm_soft_volume * VOL_MULTIPLIER;
 		*(pcm_head++) = sample;
 		pcm.pos--;
 	}
@@ -1214,6 +1602,30 @@ void ev_poll()
 			}
 #endif
 #ifdef DINGOO_OPENDINGUX
+#ifdef GCWZERO
+			} else if(event.key.keysym.sym==SDLK_HOME){
+				dvolume = 0;
+				osd_persist = 0;
+				hw.pad = 0;
+				VideoExitGame();
+				paint_menu_bg();
+				menu();
+				VideoEnterGame();
+			} else if (alt_menu_combo == 1){
+				if((event.key.keysym.sym==SDLK_ESCAPE) || (event.key.keysym.sym==SDLK_RETURN)){
+					Uint8 *keystate = SDL_GetKeyState(NULL);
+					if ( keystate[SDLK_RETURN] && keystate[SDLK_ESCAPE] ){
+						dvolume = 0;
+						osd_persist = 0;
+						hw.pad = 0;
+						VideoExitGame();
+						paint_menu_bg();
+						menu();
+						VideoEnterGame();
+					}
+				}
+			}
+#else
 			} else if(event.key.keysym.sym==SDLK_TAB){
 				Uint8 *keystate = SDL_GetKeyState(NULL);
 				if ( keystate[SDLK_TAB] && keystate[SDLK_BACKSPACE] ){
@@ -1231,7 +1643,8 @@ void ev_poll()
 					menu();
 				}
 			}
-#endif
+#endif /*GCWZERO*/
+#endif /*DINGOO_OPENDINGUX*/
 #ifndef DINGOO_BUILD
 			} else if(event.key.keysym.sym==SDLK_ESCAPE){
 				dvolume = 0;
@@ -1259,32 +1672,51 @@ void ev_poll()
 			ev.code = mapscancode(event.key.keysym.sym);
 			ev_postevent(&ev);
 			break;
+#ifndef DISABLE_JOYSTICK
 		case SDL_JOYAXISMOTION:
-			switch (event.jaxis.axis)
-			{
-			case 0: /* X axis */
-				axisval = event.jaxis.value;
-				if (axisval > joy_commit_range)
+			if (analog_input == 1){
+				switch (event.jaxis.axis)
 				{
-					if (Xstatus==2) break;
-
-					if (Xstatus==0)
+				case 0: /* X axis */
+					axisval = event.jaxis.value;
+					if (axisval > joy_commit_range)
 					{
-						ev.type = EV_RELEASE;
-						ev.code = K_JOYLEFT;
-        			  		ev_postevent(&ev);
+						if (Xstatus==2) break;
+
+						if (Xstatus==0)
+						{
+							ev.type = EV_RELEASE;
+							ev.code = K_JOYLEFT;
+								ev_postevent(&ev);
+						}
+
+						ev.type = EV_PRESS;
+						ev.code = K_JOYRIGHT;
+						ev_postevent(&ev);
+						Xstatus=2;
+						break;
 					}
 
-					ev.type = EV_PRESS;
-					ev.code = K_JOYRIGHT;
-					ev_postevent(&ev);
-					Xstatus=2;
-					break;
-				}
+					if (axisval < -(joy_commit_range))
+					{
+						if (Xstatus==0) break;
 
-				if (axisval < -(joy_commit_range))
-				{
-					if (Xstatus==0) break;
+						if (Xstatus==2)
+						{
+							ev.type = EV_RELEASE;
+							ev.code = K_JOYRIGHT;
+							ev_postevent(&ev);
+						}
+
+						ev.type = EV_PRESS;
+						ev.code = K_JOYLEFT;
+						ev_postevent(&ev);
+						Xstatus=0;
+						break;
+					}
+
+					/* if control reaches here, the axis is centered,
+					 * so just send a release signal if necisary */
 
 					if (Xstatus==2)
 					{
@@ -1293,55 +1725,55 @@ void ev_poll()
 						ev_postevent(&ev);
 					}
 
-					ev.type = EV_PRESS;
-					ev.code = K_JOYLEFT;
-					ev_postevent(&ev);
-					Xstatus=0;
-					break;
-				}
-
-				/* if control reaches here, the axis is centered,
-				 * so just send a release signal if necisary */
-
-				if (Xstatus==2)
-				{
-					ev.type = EV_RELEASE;
-					ev.code = K_JOYRIGHT;
-					ev_postevent(&ev);
-				}
-
-				if (Xstatus==0)
-				{
-					ev.type = EV_RELEASE;
-					ev.code = K_JOYLEFT;
-					ev_postevent(&ev);
-				}
-				Xstatus=1;
-				break;
-
-			case 1: /* Y axis*/
-				axisval = event.jaxis.value;
-				if (axisval > joy_commit_range)
-				{
-					if (Ystatus==2) break;
-
-					if (Ystatus==0)
+					if (Xstatus==0)
 					{
 						ev.type = EV_RELEASE;
-						ev.code = K_JOYUP;
+						ev.code = K_JOYLEFT;
 						ev_postevent(&ev);
 					}
-
-					ev.type = EV_PRESS;
-					ev.code = K_JOYDOWN;
-					ev_postevent(&ev);
-					Ystatus=2;
+					Xstatus=1;
 					break;
-				}
 
-				if (axisval < -joy_commit_range)
-				{
-					if (Ystatus==0) break;
+				case 1: /* Y axis*/
+					axisval = event.jaxis.value;
+					if (axisval > joy_commit_range)
+					{
+						if (Ystatus==2) break;
+
+						if (Ystatus==0)
+						{
+							ev.type = EV_RELEASE;
+							ev.code = K_JOYUP;
+							ev_postevent(&ev);
+						}
+
+						ev.type = EV_PRESS;
+						ev.code = K_JOYDOWN;
+						ev_postevent(&ev);
+						Ystatus=2;
+						break;
+					}
+
+					if (axisval < -joy_commit_range)
+					{
+						if (Ystatus==0) break;
+
+						if (Ystatus==2)
+						{
+							ev.type = EV_RELEASE;
+							ev.code = K_JOYDOWN;
+							ev_postevent(&ev);
+						}
+
+						ev.type = EV_PRESS;
+						ev.code = K_JOYUP;
+						ev_postevent(&ev);
+						Ystatus=0;
+						break;
+					}
+
+					/* if control reaches here, the axis is centered,
+					 * so just send a release signal if necisary */
 
 					if (Ystatus==2)
 					{
@@ -1350,31 +1782,15 @@ void ev_poll()
 						ev_postevent(&ev);
 					}
 
-					ev.type = EV_PRESS;
-					ev.code = K_JOYUP;
-					ev_postevent(&ev);
-					Ystatus=0;
+					if (Ystatus==0)
+					{
+						ev.type = EV_RELEASE;
+						ev.code = K_JOYUP;
+						ev_postevent(&ev);
+					}
+					Ystatus=1;
 					break;
 				}
-
-				/* if control reaches here, the axis is centered,
-				 * so just send a release signal if necisary */
-
-				if (Ystatus==2)
-				{
-					ev.type = EV_RELEASE;
-					ev.code = K_JOYDOWN;
-					ev_postevent(&ev);
-				}
-
-				if (Ystatus==0)
-				{
-					ev.type = EV_RELEASE;
-					ev.code = K_JOYUP;
-					ev_postevent(&ev);
-				}
-				Ystatus=1;
-				break;
 			}
 			break;
 		case SDL_JOYBUTTONUP:
@@ -1406,6 +1822,7 @@ void ev_poll()
 			ev.code = K_JOY0+event.jbutton.button;
 			ev_postevent(&ev);
 			break;
+#endif /* DISABLE_JOYSTICK */
 		case SDL_QUIT:
 			exit(1);
 			break;
@@ -1480,8 +1897,6 @@ void ohb_loadrom(char *rom){
 int main(int argc, char *argv[]){
 	FILE *config;
 	char *rom=NULL;
-	int x, y;
-	pixmap_t *pix;
 	char *cpu;
 	char *tmp_buf=NULL;
 
@@ -1609,7 +2024,7 @@ int main(int argc, char *argv[]){
 	/* End: gnuboy default settings */
 
 #ifdef DINGOO_SIM
-	rc_command("set savedir \"a:\\ohboy\\saves\\\"");
+	rc_command("set savedir \"a:/ohboy/saves/\"");
 #else	
 #ifdef DINGOO_OPENDINGUX
 	static char *svdir;
@@ -1706,13 +2121,14 @@ int main(int argc, char *argv[]){
 #endif /* DINGOO_OPENDINGUX */
 #ifdef DINGOO_SIM
 	rc_sourcefile("a:"DIRSEP"ohboy"DIRSEP"ohboy.rc");
+	rc_sourcefile("a:"DIRSEP"ohboy"DIRSEP"video.rc");
 	rc_sourcefile("a:"DIRSEP"ohboy"DIRSEP"bindings.rc");
 	mkdir("a:"DIRSEP"ohboy"DIRSEP"saves", 0777); /* FIXME lookup "savedir" rc variable and mkdir that instead? */
 	mkdir("a:"DIRSEP"ohboy"DIRSEP"palettes", 0777);
 	mkdir("a:"DIRSEP"ohboy"DIRSEP"borders", 0777);
 #else
 #ifdef DINGOO_OPENDINGUX
-	static char *dir1, *dir2, *dir3, *dir4, *ohboyrc, *bindingsrc;
+	static char *dir1, *dir2, *dir3, *dir4, *ohboyrc, *videorc, *bindingsrc;
 	dir1 = malloc(strlen(getenv("HOME")) + 24);
 	sprintf(dir1, "%s/.ohboy/", getenv("HOME"));
 	mkdir(dir1, 0777);
@@ -1733,12 +2149,17 @@ int main(int argc, char *argv[]){
 	sprintf(ohboyrc, "%s/.ohboy/ohboy.rc", getenv("HOME"));
 	rc_sourcefile(ohboyrc);
 	free (ohboyrc);
+	videorc = malloc(strlen(getenv("HOME")) + 28);
+	sprintf(videorc, "%s/.ohboy/video.rc", getenv("HOME"));
+	rc_sourcefile(videorc);
+	free (videorc);
 	bindingsrc = malloc(strlen(getenv("HOME")) + 28);
 	sprintf(bindingsrc, "%s/.ohboy/bindings.rc", getenv("HOME"));
 	rc_sourcefile(bindingsrc);
 	free (bindingsrc);
 #else
 	rc_sourcefile("ohboy.rc");
+	rc_sourcefile("video.rc");
 	rc_sourcefile("bindings.rc");
 	mkdir("saves", 0777); /* FIXME lookup "savedir" rc variable and mkdir that instead? */
 	mkdir("palettes", 0777);
@@ -1746,70 +2167,9 @@ int main(int argc, char *argv[]){
 #endif /* DINGOO_OPENDINGUX */
 #endif /* DINGOO_SIM */
 
-#ifdef UBYTE_USE_LIBPNG
-#ifdef DINGOO_SIM
-	/* do nothing */
-#else
-	pix = pixmap_loadpng("etc"DIRSEP"launch.png");
-
-	if(pix){
-		SDL_LockSurface(screen);
-		x = (screen->w - pix->width)/2;
-		y = (screen->h - pix->height)/2;
-		osd_drawpixmap(pix,x,y,0);
-		pixmap_free(pix);
-		SDL_UnlockSurface(screen);
-	}
-#endif /* DINGOO_SIM */
-#else
-    /*
-    ** Use SDL_LoadBMP() from base SDL 
-    ** TODO use IMG_Load() from SDL_image
-    */
-    
-    SDL_Surface *tmp_surface=NULL;
-#ifdef DINGOO_SIM
-	/* do nothing */
-#else
-    tmp_surface = SDL_LoadBMP("etc"DIRSEP"launch.bmp");
-
-    if (tmp_surface)
-    {
-        bgimage_bitmap_surface = SDL_DisplayFormat(tmp_surface);
-        SDL_FreeSurface(tmp_surface);
-        if (bgimage_bitmap_surface)
-        {
-            /*
-            SDL_Rect src, dest;
-            
-            src.x = 0;
-            src.y = 0;
-            src.w = bgimage_bitmap_surface->w;
-            src.h = bgimage_bitmap_surface->h;
-             
-            dest.x = 0;
-            dest.y = 0;
-            dest.w = bgimage_bitmap_surface->w;
-            dest.h = bgimage_bitmap_surface->h;
-            */
-            
-            SDL_UnlockSurface(screen);
-            SDL_BlitSurface(bgimage_bitmap_surface, NULL, screen, NULL);
-            /*
-            SDL_BlitSurface(bgimage_bitmap_surface, &src, screen, &dest);
-            */
-			SDL_Flip(screen);                                              /*Fix for launch BMP not showing when using double buffer*/
-			SDL_BlitSurface(bgimage_bitmap_surface, NULL, screen, NULL);   /*Paints the launch BMP two times*/
-			
-            SDL_FreeSurface(bgimage_bitmap_surface);
-            SDL_Flip(screen);
-            /*
-            SDL_LockSurface(screen);  // for some reason this prevents SFont from displaying.....
-            */
-        }
-    }
-#endif /* DINGOO_SIM */
-#endif /* UBYTE_USE_LIBPNG */
+#if !defined(DISABLE_ROMBROWSER)
+	paint_menu_bg();
+#endif
 
 #ifdef DINGOO_SIM
 	rom = argv[0];
@@ -1821,10 +2181,13 @@ int main(int argc, char *argv[]){
 		strcpy(rom, argv[1]);
 	}
 	atexit(shutdown);
+#if !defined(DISABLE_ROMBROWSER)
 	while(!rom)
 	{
 		rom = launcher();
 	}
+#endif /* DISABLE_ROMBROWSER */
+	VideoEnterGame();
 #endif /* DINGOO_SIM */
 
 	memset(screen->pixels,0,screen->pitch*screen->h);
